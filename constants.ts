@@ -1,19 +1,19 @@
 export const GAME_WIDTH = 640;
 export const GAME_HEIGHT = 480;
 
-// Base64 encoded simple pixel art sprites to ensure zero external dependencies
-// These are 16x16 or similar scaled up placeholders
+// Valid 16x16 Solid Pixel Art Base64s for high visibility
 
-// A yellow duck facing right
-export const DUCK_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAKlJREFUOE+dkVEKwCAMQ51uJ/b+d2IvNxhIYbS2Px8C8WlS2/qRz7tPB4A6y9+BdQBRwD2wA6oA1kAMoAiwBKIASyAKsAQiAUMgEjAEYgBDoAgwBCIAQyASUAUYAlGAIRAFGAJRgCEQBRgCUYAhEAXYA1GABRAD2ANRgD0QBVgCWYAlkAXYA1mAJZAFWAJZgCWQBVgCWYAlkAVYAlmAJZAFWAJZgCWQBd4X8w8OEh64kQAAAABJRU5ErkJggg==`;
+// Yellow Block (Player)
+export const DUCK_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFElEQVQ4T2P8z8DQAImRhkHDUAEAmEsI+00+MjUAAAAASUVORK5CYII=`;
 
-// A brown block for ground
-export const GROUND_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAEBJREFUOE9jZGBg+M+AAxYs4qOAD0B9j+A0gG4EskF0A/D6gG4Ashm4DCCbgeswYBrAwMCATwPIDsQ0gG4E3QAA0v4tEY+614wAAAAASUVORK5CYII=`;
+// Green Block (Ground)
+export const GROUND_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFElEQVQ4T2Nk+M/QAImRhkHDUAEAk4UI+ym24/8AAAAASUVORK5CYII=`;
 
-// A grey rock/stump
-export const OBSTACLE_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAFZJREFUOE9jZGBg+M+AAxYs4qOAD0B9j+A0gG4EskF0A/D6gG4Ashm4DCCbgeswYBoA0wB0OyAbQDeAbgfIDkC3A2Q3gG4HyA5AtwNkNyC7ATkY0A0gOwwA0v4tEa4714wAAAAASUVORK5CYII=`;
+// Gray Block (Obstacle)
+export const OBSTACLE_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFElEQVQ4T2MsLS39z0CJkYZBw1ABAFm7CPv7w1lAAAAAAElFTkSuQmCC`;
 
-// A bread crumb (orange/brown)
-export const BREAD_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAAXNSR0IArs4c6QAAADBJREFUKFNjZGBg+M+ABhYs4sMAMoLrAJlINgBdI8wAsgFIA90AkgF0A0gG0A0gGQAAtB8fEdH629AAAAAASUVORK5CYII=`;
+// Orange Block (Bread)
+export const BREAD_SPRITE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFElEQVQ4T2P8//8/AyVGGgYNQwUA7xwI+34/tYEAAAAASUVORK5CYII=`;
 
-export const PRESS_START_FONT = "'Press Start 2P', cursive";
+// Font family must be quoted for Canvas 'font' property parsing to work correctly with spaces
+export const GAME_FONT = "'Press Start 2P'";
