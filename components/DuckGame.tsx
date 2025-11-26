@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import kaplay, { KAPLAYCtx } from 'kaplay';
-import { BREAD_SPRITE, DUCK_SPRITE, GAME_FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_SPRITE, OBSTACLE_SPRITE } from '../constants';
+import { GAME_HEIGHT, GAME_WIDTH } from '../constants';
 import { getDuckCommentary } from '../services/geminiService';
 
 interface DuckGameProps {
@@ -35,18 +35,13 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       debug: false,
       global: false, // Do not bind to window global
       touchToMouse: true, // Ensure mobile taps register as clicks
+      pixelDensity: 2, // Retain sharpness
     });
 
     kRef.current = k;
 
     // --- Physics Setup ---
     k.setGravity(2400);
-
-    // --- Asset Loading ---
-    k.loadSprite("duck", DUCK_SPRITE);
-    k.loadSprite("ground", GROUND_SPRITE);
-    k.loadSprite("obstacle", OBSTACLE_SPRITE);
-    k.loadSprite("bread", BREAD_SPRITE);
 
     // --- Scene Definitions ---
 
@@ -56,7 +51,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       
       // Title
       k.add([
-        k.text("DUCK 8-BIT DASH", { size: 32, font: GAME_FONT }),
+        k.text("DUCK 8-BIT DASH", { size: 48 }),
         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60),
         k.anchor("center"),
         k.color(255, 223, 0), // Golden Yellow
@@ -66,7 +61,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
 
       // Subtitle
       k.add([
-        k.text("Press SPACE to Start", { size: 16, font: GAME_FONT }),
+        k.text("Press SPACE to Start", { size: 24 }),
         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20),
         k.anchor("center"),
         k.color(255, 255, 255),
@@ -75,8 +70,8 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       
       // Touch instruction
       const blinkText = k.add([
-         k.text("Click or Tap Screen", { size: 12, font: GAME_FONT }),
-         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50),
+         k.text("Click or Tap Screen", { size: 16 }),
+         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60),
          k.anchor("center"),
          k.color(200, 200, 200),
          k.opacity(1),
@@ -101,17 +96,35 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       setGameActive(true);
       let score = 0;
       let speed = 400;
+      let canDoubleJump = false;
 
       // HUD
       const scoreLabel = k.add([
-        k.text("Score: 0", { size: 16, font: GAME_FONT }),
+        k.text("Score: 0", { size: 24 }),
         k.pos(24, 24),
         k.color(0, 0, 0),
         k.fixed(),
         k.z(100),
       ]);
 
-      // Physics Floor (Invisible)
+      // --- Cloud Spawner (Parallax) ---
+      const spawnCloud = () => {
+        k.add([
+            k.rect(k.rand(40, 80), k.rand(20, 30)),
+            k.pos(GAME_WIDTH, k.rand(20, 200)),
+            k.move(k.LEFT, speed * 0.2), // Move slower than foreground
+            k.color(255, 255, 255),
+            k.opacity(0.6),
+            k.offscreen({ destroy: true, distance: 200 }),
+            k.z(-10), // Behind everything
+            "cloud"
+        ]);
+        k.wait(k.rand(1, 3), spawnCloud);
+      };
+      spawnCloud();
+
+
+      // Physics Floor (Invisible) - Keeps the player from falling
       k.add([
         k.rect(GAME_WIDTH, 48),
         k.pos(0, GAME_HEIGHT - 48),
@@ -123,14 +136,23 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
 
       // Visual Floor Spawner
       const spawnGround = (x: number) => {
-          k.add([
-             k.sprite("ground"),
+          // Main Ground Block
+          const ground = k.add([
+             k.rect(16, 16),
+             k.color(34, 139, 34), // Forest Green
              k.pos(x, GAME_HEIGHT - 48),
              k.scale(4), // 16x4 = 64
              k.move(k.LEFT, speed),
              k.offscreen({ destroy: true, distance: 100 }),
              k.z(0), // Layer 0 (Back)
              "ground-visual"
+         ]);
+         
+         // Add some grass detail (lighter green strip at top)
+         ground.add([
+             k.rect(16, 4),
+             k.pos(0, 0),
+             k.color(50, 205, 50) // Lime Green
          ]);
       };
 
@@ -144,27 +166,125 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
           spawnGround(GAME_WIDTH);
       });
       
-      // Player
+      // --- Player (Duck) ---
       const player = k.add([
-        k.sprite("duck"),
+        k.rect(16, 16),
+        k.color(255, 215, 0), // Gold/Yellow
         k.pos(80, GAME_HEIGHT - 200),
-        k.area({ scale: k.vec2(0.8, 0.8) }),
+        k.area(),
         k.body(),
         k.scale(4), 
         k.anchor("center"),
-        k.z(20), // Layer 20 (Front of obstacles)
+        k.z(20), // Layer 20 (Front)
         "player",
       ]);
+      
+      // Duck Eye
+      player.add([
+          k.rect(2, 2),
+          k.pos(2, -4), // Relative to center
+          k.color(0, 0, 0),
+          k.anchor("center")
+      ]);
+      
+      // Duck Beak
+      player.add([
+          k.rect(4, 2),
+          k.pos(6, 0), // Stick out right
+          k.color(255, 69, 0), // Red-Orange
+          k.anchor("center")
+      ]);
+      
+      // Duck Wing (Saved to variable for animation)
+      const wing = player.add([
+          k.rect(4, 3),
+          k.pos(-2, 2), 
+          k.color(218, 165, 32), // Darker Goldenrod
+          k.anchor("center")
+      ]);
 
-      // Jump Logic
+      // --- Particle Effects ---
+      const spawnDust = (pos: any) => {
+          for (let i = 0; i < 4; i++) {
+              k.add([
+                  k.rect(4, 4),
+                  k.pos(pos),
+                  k.color(200, 200, 200),
+                  k.move(k.choose([k.LEFT, k.RIGHT, k.UP]), k.rand(20, 60)),
+                  k.lifespan(0.3, { fade: 0.1 }),
+                  k.z(15)
+              ]);
+          }
+      };
+
+      const spawnCrumbs = (pos: any) => {
+          for (let i = 0; i < 6; i++) {
+              k.add([
+                  k.rect(3, 3),
+                  k.pos(pos),
+                  k.color(255, 165, 0), // Orange
+                  k.move(k.Vec2.fromAngle(k.rand(0, 360)), k.rand(60, 100)),
+                  k.lifespan(0.4, { fade: 0.1 }),
+                  k.z(25)
+              ]);
+          }
+      };
+
+      const showFloatingText = (txt: string, pos: any) => {
+          k.add([
+              k.text(txt, { size: 20 }),
+              k.pos(pos),
+              k.color(255, 255, 0),
+              k.move(k.UP, 50),
+              k.lifespan(0.8, { fade: 0.5 }),
+              k.z(100)
+          ]);
+      };
+
+
+      // --- Logic ---
+
+      // Jump Logic (Double Jump)
       const jump = () => {
         if (player.isGrounded()) {
           player.jump(900);
+          canDoubleJump = true;
+          // Squash effect
+          player.scale = k.vec2(4.5, 3.5); 
+          k.wait(0.1, () => player.scale = k.vec2(4, 4));
+        } else if (canDoubleJump) {
+            player.jump(700);
+            canDoubleJump = false;
+            // Spin effect for double jump
+            k.tween(0, 360, 0.3, (val) => player.angle = val, k.easings.easeOutQuad);
         }
       };
 
       k.onKeyPress("space", jump);
       k.onMousePress(jump);
+
+      // Animation Loop
+      let time = 0;
+      k.onUpdate(() => {
+          time += k.dt();
+          // Running Animation (only when grounded)
+          if (player.isGrounded()) {
+              player.angle = 0; // Reset angle logic from double jump
+              // Bob body
+              player.pos.y += Math.sin(time * 20) * 0.5;
+              // Flap wing
+              wing.pos.y = 2 + Math.sin(time * 30) * 1;
+          } else {
+              // Air pose
+              wing.pos.y = -2; // Wing up
+          }
+      });
+      
+      // Ground Impact
+      player.onCollide("ground-physics", () => {
+          spawnDust(player.pos.add(0, 32)); // Spawn dust at feet
+          k.shake(2);
+      });
 
       // Obstacle & Item Spawner
       const spawnEverything = () => {
@@ -174,9 +294,10 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
         // Spawn Ground Obstacle (Rock)
         if (!isAir) {
             k.add([
-              k.sprite("obstacle"),
-              k.area({ scale: k.vec2(0.8) }),
-              k.scale(3), 
+              k.rect(12, 12),
+              k.color(105, 105, 105), // Dim Gray
+              k.area(),
+              k.scale(4), 
               k.pos(GAME_WIDTH, GAME_HEIGHT - 48),
               k.anchor("botleft"),
               k.move(k.LEFT, speed),
@@ -188,10 +309,12 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
         
         // Spawn Bread
         const breadY = isAir ? GAME_HEIGHT - 200 : GAME_HEIGHT - 130;
-        k.add([
-            k.sprite("bread"),
-            k.area({ scale: k.vec2(1.2) }), // Easier to collect
-            k.scale(4),
+        const bread = k.add([
+            k.rect(10, 10),
+            k.color(255, 165, 0), // Orange Bread
+            k.outline(2, k.rgb(139, 69, 19)), // Brown crust outline
+            k.area(), 
+            k.scale(3),
             k.pos(GAME_WIDTH + (isAir ? 0 : 150), breadY),
             k.anchor("center"),
             k.move(k.LEFT, speed),
@@ -199,8 +322,14 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
             k.z(10), // Layer 10
             "bread",
         ]);
+        
+        // Make bread bob up and down
+        k.loop(1, () => {
+           // Simple manual tween simulation or just logic in update
+           // For simplicity in spawner, we leave it static movement
+        });
 
-        const nextTime = k.rand(1.5, 2.5);
+        const nextTime = k.rand(1.2, 2.0); // Slightly faster spawn rate for fun
         k.wait(nextTime, spawnEverything);
       };
 
@@ -218,6 +347,10 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
         scoreLabel.text = `Score: ${score}`;
         onScoreUpdate(score);
         k.shake(2);
+        
+        // Juice: Particles & Text
+        spawnCrumbs(b.pos);
+        showFloatingText("+100", b.pos);
       });
 
       // Score Timer
@@ -226,6 +359,11 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
           scoreLabel.text = `Score: ${score}`;
           onScoreUpdate(score);
       });
+      
+      // Speed up over time
+      k.loop(5, () => {
+          speed += 20;
+      });
     });
 
     // Game Over Scene
@@ -233,7 +371,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       setGameActive(false);
       
       k.add([
-        k.text("GAME OVER", { size: 48, font: GAME_FONT }),
+        k.text("GAME OVER", { size: 48 }),
         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60),
         k.anchor("center"),
         k.color(0, 0, 0),
@@ -241,7 +379,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       ]);
 
       k.add([
-        k.text(`Score: ${finalScore}`, { size: 24, font: GAME_FONT }),
+        k.text(`Score: ${finalScore}`, { size: 32 }),
         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
         k.anchor("center"),
         k.color(0, 0, 0),
@@ -249,7 +387,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       ]);
       
       const loadingText = k.add([
-          k.text("Consulting the Wise Duck...", { size: 16, font: GAME_FONT }),
+          k.text("Consulting the Wise Duck...", { size: 16 }),
           k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50),
           k.anchor("center"),
           k.color(80, 80, 80),
@@ -266,10 +404,8 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
       k.onMousePress(restart);
     });
 
-    // Ensure assets are loaded before starting
-    k.onLoad(() => {
-        k.go("start");
-    });
+    // Start game immediately since we have no assets to load
+    k.go("start");
 
     // Cleanup function for React useEffect
     return () => {
