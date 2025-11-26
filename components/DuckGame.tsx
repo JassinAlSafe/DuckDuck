@@ -211,6 +211,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
                   k.pos(pos),
                   k.color(200, 200, 200),
                   k.move(k.choose([k.LEFT, k.RIGHT, k.UP]), k.rand(20, 60)),
+                  k.opacity(1), // Required for lifespan fade
                   k.lifespan(0.3, { fade: 0.1 }),
                   k.z(15)
               ]);
@@ -224,6 +225,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
                   k.pos(pos),
                   k.color(255, 165, 0), // Orange
                   k.move(k.Vec2.fromAngle(k.rand(0, 360)), k.rand(60, 100)),
+                  k.opacity(1), // Required for lifespan fade
                   k.lifespan(0.4, { fade: 0.1 }),
                   k.z(25)
               ]);
@@ -236,6 +238,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
               k.pos(pos),
               k.color(255, 255, 0),
               k.move(k.UP, 50),
+              k.opacity(1), // Required for lifespan fade
               k.lifespan(0.8, { fade: 0.5 }),
               k.z(100)
           ]);
