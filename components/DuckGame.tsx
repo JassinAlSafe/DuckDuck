@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 import kaplay, { KAPLAYCtx } from 'kaplay';
 import { GAME_HEIGHT, GAME_WIDTH } from '../constants';
@@ -6,97 +7,58 @@ import { getDuckCommentary } from '../services/geminiService';
 interface DuckGameProps {
   onScoreUpdate: (score: number) => void;
   onGameOver: (score: number, commentary: string) => void;
-  setGameActive: (active: boolean) => void;
 }
 
-const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameActive }) => {
+const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const kRef = useRef<KAPLAYCtx | null>(null);
 
   useEffect(() => {
-    // Safety check: If the container is missing, abort.
     if (!containerRef.current) return;
 
-    // Cleanup existing game if it exists (Strict Mode handling)
+    // --- Cleanup Phase ---
+    // If a game instance exists, quit it and clear the DOM to prevent duplicates
     if (kRef.current) {
       kRef.current.quit();
       kRef.current = null;
     }
-    // Ensure container is empty before appending new canvas
+    // Hard reset the container content to remove any lingering canvases
     containerRef.current.innerHTML = '';
 
-    // Initialize Kaplay
+    // --- Initialization Phase ---
     const k = kaplay({
       root: containerRef.current,
       width: GAME_WIDTH,
       height: GAME_HEIGHT,
-      letterbox: true, // Scales game to fit container
-      background: [135, 206, 235], // Sky blue
+      letterbox: true,
+      background: [135, 206, 235], // Initial Sky Blue
       debug: false,
-      global: false, // Do not bind to window global
-      touchToMouse: true, // Ensure mobile taps register as clicks
-      pixelDensity: 2, // Retain sharpness
+      global: false, // Prevent polluting window object
+      touchToMouse: true,
+      pixelDensity: 2,
     });
 
     kRef.current = k;
 
-    // --- Physics Setup ---
+    // Physics
     k.setGravity(2400);
 
-    // --- Scene Definitions ---
-
-    // Start Screen
-    k.scene("start", () => {
-      setGameActive(false);
-      
-      // Title
-      k.add([
-        k.text("DUCK 8-BIT DASH", { size: 48 }),
-        k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60),
-        k.anchor("center"),
-        k.color(255, 223, 0), // Golden Yellow
-        k.outline(4, k.rgb(0, 0, 0)),
-        k.z(100),
-      ]);
-
-      // Subtitle
-      k.add([
-        k.text("Press SPACE to Start", { size: 24 }),
-        k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20),
-        k.anchor("center"),
-        k.color(255, 255, 255),
-        k.z(100),
-      ]);
-      
-      // Touch instruction
-      const blinkText = k.add([
-         k.text("Click or Tap Screen", { size: 16 }),
-         k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60),
-         k.anchor("center"),
-         k.color(200, 200, 200),
-         k.opacity(1),
-         k.z(100),
-      ]);
-      
-      k.loop(0.8, () => {
-          blinkText.opacity = blinkText.opacity === 0 ? 1 : 0;
-      });
-
-      // Input Handling
-      const startGame = () => {
-          k.go("game");
-      };
-
-      k.onKeyPress("space", startGame);
-      k.onMousePress(startGame);
-    });
-
-    // Main Game Loop
+    // --- Scene: Game ---
     k.scene("game", () => {
-      setGameActive(true);
       let score = 0;
       let speed = 400;
       let canDoubleJump = false;
+      let isGameRunning = false; 
+
+      // Dash State
+      let isDashing = false;
+      let canDash = true;
+      const DASH_DURATION = 0.3;
+      const DASH_COOLDOWN = 2.0;
+      let dashTimer = 0;
+
+      // Shield State
+      let hasShield = false;
 
       // HUD
       const scoreLabel = k.add([
@@ -107,24 +69,84 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
         k.z(100),
       ]);
 
-      // --- Cloud Spawner (Parallax) ---
+      // Dash Bar UI
+      k.add([
+        k.rect(104, 14),
+        k.pos(22, 60),
+        k.color(0, 0, 0),
+        k.fixed(),
+        k.z(99),
+      ]);
+
+      const dashBar = k.add([
+        k.rect(100, 10),
+        k.pos(24, 62),
+        k.color(0, 255, 255),
+        k.fixed(),
+        k.z(100),
+      ]);
+      
+      k.add([
+          k.text("DASH", { size: 10 }),
+          k.pos(24, 50),
+          k.color(0,0,0),
+          k.z(100)
+      ]);
+
+      // --- Countdown Sequence ---
+      const startCountdown = async () => {
+          const center = k.vec2(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+          const t3 = k.add([k.text("3", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,0,0), k.z(200)]);
+          await k.wait(0.6);
+          k.destroy(t3);
+          const t2 = k.add([k.text("2", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,165,0), k.z(200)]);
+          await k.wait(0.6);
+          k.destroy(t2);
+          const t1 = k.add([k.text("1", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,255,0), k.z(200)]);
+          await k.wait(0.6);
+          k.destroy(t1);
+          const go = k.add([k.text("GO!", { size: 80 }), k.pos(center), k.anchor("center"), k.color(0,255,0), k.z(200)]);
+          await k.wait(0.4);
+          k.destroy(go);
+          isGameRunning = true;
+      };
+      
+      startCountdown();
+
+      // --- Environment ---
+      
+      // Stars (for night cycle)
+      const stars: any[] = [];
+      for(let i=0; i<50; i++) {
+        const star = k.add([
+            k.rect(2, 2),
+            k.pos(k.rand(0, GAME_WIDTH), k.rand(0, GAME_HEIGHT - 50)),
+            k.color(255, 255, 255),
+            k.opacity(0), // Start invisible
+            k.fixed(),
+            k.z(-20)
+        ]);
+        stars.push(star);
+      }
+
+      // Clouds
       const spawnCloud = () => {
+        if (!isGameRunning) { k.wait(0.5, spawnCloud); return; }
         k.add([
             k.rect(k.rand(40, 80), k.rand(20, 30)),
             k.pos(GAME_WIDTH, k.rand(20, 200)),
-            k.move(k.LEFT, speed * 0.2), // Move slower than foreground
+            k.move(k.LEFT, speed * 0.2),
             k.color(255, 255, 255),
             k.opacity(0.6),
             k.offscreen({ destroy: true, distance: 200 }),
-            k.z(-10), // Behind everything
+            k.z(-10),
             "cloud"
         ]);
         k.wait(k.rand(1, 3), spawnCloud);
       };
       spawnCloud();
 
-
-      // Physics Floor (Invisible) - Keeps the player from falling
+      // Physics Floor (Invisible collider)
       k.add([
         k.rect(GAME_WIDTH, 48),
         k.pos(0, GAME_HEIGHT - 48),
@@ -136,74 +158,92 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
 
       // Visual Floor Spawner
       const spawnGround = (x: number) => {
-          // Main Ground Block
           const ground = k.add([
              k.rect(16, 16),
-             k.color(34, 139, 34), // Forest Green
+             k.color(34, 139, 34),
              k.pos(x, GAME_HEIGHT - 48),
-             k.scale(4), // 16x4 = 64
+             k.scale(4),
              k.move(k.LEFT, speed),
              k.offscreen({ destroy: true, distance: 100 }),
-             k.z(0), // Layer 0 (Back)
+             k.z(0),
              "ground-visual"
          ]);
          
-         // Add some grass detail (lighter green strip at top)
+         // Grass top detail
          ground.add([
              k.rect(16, 4),
              k.pos(0, 0),
-             k.color(50, 205, 50) // Lime Green
+             k.color(50, 205, 50)
          ]);
       };
 
-      // Initial Ground Fill
+      // Fill initial ground
       for (let i = 0; i < GAME_WIDTH / 64 + 2; i++) {
          spawnGround(i * 64);
       }
       
-      // Continuous Ground Loop
+      // Infinite ground loop
       k.loop(64 / speed, () => {
-          spawnGround(GAME_WIDTH);
+          if (isGameRunning) spawnGround(GAME_WIDTH);
       });
       
-      // --- Player (Duck) ---
+      // --- Player ---
       const player = k.add([
         k.rect(16, 16),
-        k.color(255, 215, 0), // Gold/Yellow
+        k.color(255, 215, 0),
         k.pos(80, GAME_HEIGHT - 200),
         k.area(),
         k.body(),
         k.scale(4), 
         k.anchor("center"),
-        k.z(20), // Layer 20 (Front)
+        k.z(20),
         "player",
       ]);
       
-      // Duck Eye
+      // Eye
       player.add([
           k.rect(2, 2),
-          k.pos(2, -4), // Relative to center
+          k.pos(2, -4),
           k.color(0, 0, 0),
           k.anchor("center")
       ]);
       
-      // Duck Beak
+      // Beak
       player.add([
           k.rect(4, 2),
-          k.pos(6, 0), // Stick out right
-          k.color(255, 69, 0), // Red-Orange
+          k.pos(6, 0),
+          k.color(255, 69, 0),
           k.anchor("center")
       ]);
       
-      // Duck Wing (Saved to variable for animation)
+      // Wing
       const wing = player.add([
           k.rect(4, 3),
           k.pos(-2, 2), 
-          k.color(218, 165, 32), // Darker Goldenrod
+          k.color(218, 165, 32),
           k.anchor("center")
       ]);
 
-      // --- Particle Effects ---
+      // Shield Visual (Hidden by default)
+      const shieldVisual = player.add([
+          k.rect(20, 20),
+          k.pos(0, 0),
+          k.color(0, 200, 255),
+          k.opacity(0),
+          k.anchor("center"),
+          k.z(-1) // Behind duck
+      ]);
+      
+      // Shield Glow
+      shieldVisual.add([
+          k.rect(18, 18),
+          k.pos(0,0),
+          k.color(255, 255, 255),
+          k.opacity(0.3),
+          k.anchor("center")
+      ]);
+
+      // --- FX Helpers ---
       const spawnDust = (pos: any) => {
           for (let i = 0; i < 4; i++) {
               k.add([
@@ -211,7 +251,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
                   k.pos(pos),
                   k.color(200, 200, 200),
                   k.move(k.choose([k.LEFT, k.RIGHT, k.UP]), k.rand(20, 60)),
-                  k.opacity(1), // Required for lifespan fade
+                  k.opacity(1),
                   k.lifespan(0.3, { fade: 0.1 }),
                   k.z(15)
               ]);
@@ -223,126 +263,277 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
               k.add([
                   k.rect(3, 3),
                   k.pos(pos),
-                  k.color(255, 165, 0), // Orange
+                  k.color(255, 165, 0),
                   k.move(k.Vec2.fromAngle(k.rand(0, 360)), k.rand(60, 100)),
-                  k.opacity(1), // Required for lifespan fade
+                  k.opacity(1),
                   k.lifespan(0.4, { fade: 0.1 }),
                   k.z(25)
               ]);
           }
       };
 
-      const showFloatingText = (txt: string, pos: any) => {
+      const spawnExplosion = (pos: any) => {
+        for (let i = 0; i < 8; i++) {
+             k.add([
+                k.rect(5, 5),
+                k.pos(pos),
+                k.color(255, 0, 0),
+                k.move(k.Vec2.fromAngle(k.rand(0, 360)), k.rand(100, 200)),
+                k.lifespan(0.5, { fade: 0.1 }),
+                k.opacity(1),
+                k.z(30)
+             ]);
+        }
+      };
+
+      const showFloatingText = (txt: string, pos: any, color = k.rgb(255, 255, 0)) => {
           k.add([
               k.text(txt, { size: 20 }),
               k.pos(pos),
-              k.color(255, 255, 0),
+              k.color(color),
               k.move(k.UP, 50),
-              k.opacity(1), // Required for lifespan fade
+              k.opacity(1),
               k.lifespan(0.8, { fade: 0.5 }),
               k.z(100)
           ]);
       };
 
-
-      // --- Logic ---
-
-      // Jump Logic (Double Jump)
+      // --- Controls ---
       const jump = () => {
+        if (!isGameRunning) return;
         if (player.isGrounded()) {
           player.jump(900);
           canDoubleJump = true;
-          // Squash effect
-          player.scale = k.vec2(4.5, 3.5); 
-          k.wait(0.1, () => player.scale = k.vec2(4, 4));
+          // Squash & Stretch: Stretch Y, squish X
+          k.tween(k.vec2(4, 4), k.vec2(3, 5), 0.1, (val) => player.scale = val, k.easings.easeOutQuad)
+           .then(() => k.tween(player.scale, k.vec2(4, 4), 0.2, (val) => player.scale = val, k.easings.easeOutBounce));
         } else if (canDoubleJump) {
             player.jump(700);
             canDoubleJump = false;
-            // Spin effect for double jump
             k.tween(0, 360, 0.3, (val) => player.angle = val, k.easings.easeOutQuad);
         }
       };
 
-      k.onKeyPress("space", jump);
-      k.onMousePress(jump);
+      const dash = () => {
+          if (!isGameRunning) return;
+          if (canDash && !isDashing) {
+              isDashing = true;
+              canDash = false;
+              dashTimer = 0;
+              k.shake(5);
+              const dashTween = k.tween(player.pos.x, player.pos.x + 50, 0.1, (val) => player.pos.x = val, k.easings.easeOutQuad);
+              k.wait(DASH_DURATION, () => {
+                  isDashing = false;
+                  k.tween(player.pos.x, 80, 0.5, (val) => player.pos.x = val, k.easings.easeOutQuad);
+              });
+          }
+      };
 
-      // Animation Loop
+      k.onKeyPress("space", jump);
+      k.onKeyPress("up", jump);
+      k.onMousePress(jump);
+      k.onKeyPress("right", dash);
+      k.onKeyPress("d", dash);
+
+      // --- Main Loop ---
       let time = 0;
       k.onUpdate(() => {
+          if (!isGameRunning) return;
+
           time += k.dt();
-          // Running Animation (only when grounded)
+          
+          // Dash Cooldown
+          if (!canDash) {
+              dashTimer += k.dt();
+              const progress = Math.min(dashTimer / DASH_COOLDOWN, 1);
+              dashBar.width = 100 * progress;
+              if (progress >= 1) {
+                  canDash = true;
+                  dashBar.color = k.rgb(0, 255, 255);
+              } else {
+                  dashBar.color = k.rgb(100, 100, 100);
+              }
+          }
+
+          // Dash Visuals
+          if (isDashing) {
+              // Ghost trail
+              if (time % 0.05 < 0.02) {
+                  k.add([
+                      k.rect(16, 16),
+                      k.pos(player.pos),
+                      k.scale(4),
+                      k.anchor("center"),
+                      k.color(255, 255, 255),
+                      k.opacity(0.4),
+                      k.lifespan(0.2, { fade: 0.1 }),
+                      k.z(19)
+                  ]);
+              }
+              player.color = k.rgb(255, 255, 255);
+          } else {
+              player.color = k.rgb(255, 215, 0);
+          }
+          
+          // Shield Visuals
+          if (hasShield) {
+              shieldVisual.opacity = 0.5 + Math.sin(time * 10) * 0.2; // Pulse
+              shieldVisual.angle += k.dt() * 100;
+          } else {
+              shieldVisual.opacity = 0;
+          }
+
+          // Day/Night Cycle
+          const cycle = Math.sin(time * 0.1); // -1 to 1
+          const r = k.map(cycle, -1, 1, 20, 135);
+          const g = k.map(cycle, -1, 1, 20, 206);
+          const b = k.map(cycle, -1, 1, 60, 235);
+          k.setBackground(r, g, b);
+
+          // Star opacity (visible when cycle is negative/night)
+          const starOp = k.map(cycle, 0.2, -0.8, 0, 0.8);
+          stars.forEach(s => s.opacity = Math.max(0, starOp));
+
+          // Player Animation
           if (player.isGrounded()) {
-              player.angle = 0; // Reset angle logic from double jump
-              // Bob body
+              if (!isDashing) player.angle = 0; 
+              // Idle/Run bobbing
               player.pos.y += Math.sin(time * 20) * 0.5;
-              // Flap wing
               wing.pos.y = 2 + Math.sin(time * 30) * 1;
           } else {
-              // Air pose
-              wing.pos.y = -2; // Wing up
+              wing.pos.y = -2;
           }
       });
       
-      // Ground Impact
+      // Land Impact
       player.onCollide("ground-physics", () => {
-          spawnDust(player.pos.add(0, 32)); // Spawn dust at feet
+          spawnDust(player.pos.add(0, 32));
           k.shake(2);
+          // Squash: squish Y, stretch X
+          k.tween(k.vec2(5, 3), k.vec2(4, 4), 0.15, (val) => player.scale = val, k.easings.easeOutElastic);
       });
 
-      // Obstacle & Item Spawner
+      // --- Spawner ---
       const spawnEverything = () => {
-        const type = k.randi(0, 4); 
-        const isAir = type === 3; // 1 in 4 chance for air bread
+        if (!isGameRunning) { k.wait(1, spawnEverything); return; }
+
+        // Increase variety based on score/time
+        const type = k.randi(0, 100); 
         
-        // Spawn Ground Obstacle (Rock)
-        if (!isAir) {
+        // 0-35: Ground Obstacle
+        if (type <= 35) {
             k.add([
               k.rect(12, 12),
-              k.color(105, 105, 105), // Dim Gray
+              k.color(105, 105, 105),
               k.area(),
               k.scale(4), 
               k.pos(GAME_WIDTH, GAME_HEIGHT - 48),
               k.anchor("botleft"),
               k.move(k.LEFT, speed),
               k.offscreen({ destroy: true, distance: 100 }),
-              k.z(10), // Layer 10
+              k.z(10), 
               "obstacle",
             ]);
         }
         
-        // Spawn Bread
-        const breadY = isAir ? GAME_HEIGHT - 200 : GAME_HEIGHT - 130;
-        const bread = k.add([
-            k.rect(10, 10),
-            k.color(255, 165, 0), // Orange Bread
-            k.outline(2, k.rgb(139, 69, 19)), // Brown crust outline
-            k.area(), 
-            k.scale(3),
-            k.pos(GAME_WIDTH + (isAir ? 0 : 150), breadY),
-            k.anchor("center"),
-            k.move(k.LEFT, speed),
-            k.offscreen({ destroy: true, distance: 100 }),
-            k.z(10), // Layer 10
-            "bread",
-        ]);
+        // 36-50: Flying Drone
+        else if (type <= 50) {
+             const drone = k.add([
+                k.rect(12, 8),
+                k.color(220, 20, 60),
+                k.area(),
+                k.scale(4),
+                k.pos(GAME_WIDTH, GAME_HEIGHT - k.rand(100, 180)),
+                k.anchor("center"),
+                k.move(k.LEFT, speed * 1.2),
+                k.offscreen({ destroy: true, distance: 100 }),
+                k.z(20),
+                "enemy"
+             ]);
+             
+             drone.add([
+                 k.rect(8, 2),
+                 k.pos(0, -6),
+                 k.color(200, 200, 200),
+                 k.anchor("center")
+             ]);
+        }
         
-        // Make bread bob up and down
-        k.loop(1, () => {
-           // Simple manual tween simulation or just logic in update
-           // For simplicity in spawner, we leave it static movement
-        });
+        // 51-55: Shield Powerup (Rare)
+        else if (type <= 55) {
+             const shieldItem = k.add([
+                k.rect(8, 8),
+                k.color(0, 191, 255),
+                k.area(),
+                k.scale(3),
+                k.pos(GAME_WIDTH, GAME_HEIGHT - 120),
+                k.anchor("center"),
+                k.move(k.LEFT, speed),
+                k.offscreen({ destroy: true, distance: 100 }),
+                k.z(15),
+                "shield-item"
+             ]);
+             // Glow effect
+             shieldItem.add([
+                 k.rect(12, 12),
+                 k.color(0, 191, 255),
+                 k.opacity(0.3),
+                 k.anchor("center")
+             ]);
+        }
+        
+        // 56+: Bread (Common)
+        else {
+            const isAir = k.rand() > 0.5;
+            const breadY = isAir ? GAME_HEIGHT - 220 : GAME_HEIGHT - 130;
+            k.add([
+                k.rect(10, 10),
+                k.color(255, 165, 0),
+                k.outline(2, k.rgb(139, 69, 19)),
+                k.area(), 
+                k.scale(3),
+                k.pos(GAME_WIDTH + (isAir ? 0 : 150), breadY),
+                k.anchor("center"),
+                k.move(k.LEFT, speed),
+                k.offscreen({ destroy: true, distance: 100 }),
+                k.z(10), 
+                "bread",
+            ]);
+        }
 
-        const nextTime = k.rand(1.2, 2.0); // Slightly faster spawn rate for fun
+        const nextTime = k.rand(0.8, 1.8); 
         k.wait(nextTime, spawnEverything);
       };
 
       spawnEverything();
 
-      // Collisions
-      player.onCollide("obstacle", () => {
-        k.shake(20);
-        k.go("gameover", score);
-      });
+      // --- Collision Handling ---
+      const handleDanger = async (obj: any) => {
+          if (isDashing) {
+              // Dash destroys everything
+              k.destroy(obj);
+              k.shake(5);
+              spawnExplosion(obj.pos);
+              score += 50;
+              showFloatingText("SMASH!", player.pos);
+          } else if (hasShield) {
+              // Shield protects once
+              k.destroy(obj);
+              hasShield = false;
+              k.shake(5);
+              spawnExplosion(obj.pos);
+              showFloatingText("BLOCKED!", player.pos, k.rgb(0, 200, 255));
+          } else {
+              // Death
+              isGameRunning = false;
+              k.shake(20);
+              const commentary = await getDuckCommentary(score);
+              onGameOver(score, commentary);
+          }
+      };
+
+      player.onCollide("obstacle", handleDanger);
+      player.onCollide("enemy", handleDanger);
 
       player.onCollide("bread", (b) => {
         k.destroy(b);
@@ -350,74 +541,47 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver, setGameA
         scoreLabel.text = `Score: ${score}`;
         onScoreUpdate(score);
         k.shake(2);
-        
-        // Juice: Particles & Text
         spawnCrumbs(b.pos);
         showFloatingText("+100", b.pos);
       });
+      
+      player.onCollide("shield-item", (s) => {
+          k.destroy(s);
+          hasShield = true;
+          score += 50;
+          showFloatingText("SHIELD UP!", player.pos, k.rgb(0, 255, 255));
+          k.shake(2);
+      });
 
-      // Score Timer
+      // Score Loop
       k.loop(0.1, () => {
-          score += 1;
-          scoreLabel.text = `Score: ${score}`;
-          onScoreUpdate(score);
+          if (isGameRunning) {
+              score += 1;
+              scoreLabel.text = `Score: ${score}`;
+              onScoreUpdate(score);
+          }
       });
       
-      // Speed up over time
+      // Speed Loop
       k.loop(5, () => {
-          speed += 20;
+          if (isGameRunning) speed += 15;
       });
     });
 
-    // Game Over Scene
-    k.scene("gameover", async (finalScore: number) => {
-      setGameActive(false);
-      
-      k.add([
-        k.text("GAME OVER", { size: 48 }),
-        k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60),
-        k.anchor("center"),
-        k.color(0, 0, 0),
-        k.z(100),
-      ]);
+    // Start immediately
+    k.go("game");
 
-      k.add([
-        k.text(`Score: ${finalScore}`, { size: 32 }),
-        k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
-        k.anchor("center"),
-        k.color(0, 0, 0),
-        k.z(100),
-      ]);
-      
-      const loadingText = k.add([
-          k.text("Consulting the Wise Duck...", { size: 16 }),
-          k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50),
-          k.anchor("center"),
-          k.color(80, 80, 80),
-          k.z(100),
-      ]);
-
-      const commentary = await getDuckCommentary(finalScore);
-      onGameOver(finalScore, commentary);
-
-      loadingText.text = "Press SPACE to Restart";
-      
-      const restart = () => k.go("game");
-      k.onKeyPress("space", restart);
-      k.onMousePress(restart);
-    });
-
-    // Start game immediately since we have no assets to load
-    k.go("start");
-
-    // Cleanup function for React useEffect
+    // Cleanup on unmount
     return () => {
-        k.quit();
+        if (kRef.current) {
+            kRef.current.quit();
+            kRef.current = null;
+        }
         if (containerRef.current) {
             containerRef.current.innerHTML = '';
         }
     };
-  }, []);
+  }, [onGameOver, onScoreUpdate]);
 
   return (
     <div className="relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl bg-slate-900 w-full max-w-2xl mx-auto">
