@@ -271,7 +271,7 @@ export function spawnSlime(
     k.pos(GAME_WIDTH, GAME_HEIGHT - 60),
     k.area({ scale: 0.8 }),
     k.body(),
-    k.scale(baseScale),
+    k.scale(-baseScale, baseScale), // Negative X to face left (toward duck)
     k.anchor("center"),
     k.move(k.LEFT, speed),
     k.offscreen({ destroy: true, distance: 100 }),
@@ -287,22 +287,22 @@ export function spawnSlime(
     if (!isGameRunning() || isPaused()) return;
     jumpTimer += k.dt();
 
-    // Squish animation when about to jump
+    // Squish animation when about to jump (negative X to maintain facing left)
     if (jumpTimer >= ENEMIES.SLIME.JUMP_INTERVAL - 0.2 && slime.isGrounded()) {
-      slime.scale = k.vec2(baseScale * 1.3, baseScale * 0.7); // Squash down
+      slime.scale = k.vec2(-baseScale * 1.3, baseScale * 0.7); // Squash down
     }
 
     if (jumpTimer >= ENEMIES.SLIME.JUMP_INTERVAL) {
       jumpTimer = 0;
       if (slime.isGrounded()) {
         slime.jump(ENEMIES.SLIME.JUMP_FORCE);
-        slime.scale = k.vec2(baseScale * 0.7, baseScale * 1.3); // Stretch up
+        slime.scale = k.vec2(-baseScale * 0.7, baseScale * 1.3); // Stretch up
       }
     }
 
     // Return to normal scale when grounded
     if (slime.isGrounded() && jumpTimer < ENEMIES.SLIME.JUMP_INTERVAL - 0.2) {
-      slime.scale = k.lerp(slime.scale, k.vec2(baseScale, baseScale), k.dt() * 8);
+      slime.scale = k.lerp(slime.scale, k.vec2(-baseScale, baseScale), k.dt() * 8);
     }
   });
 }
@@ -324,7 +324,7 @@ export function spawnFrog(
     k.pos(GAME_WIDTH, GAME_HEIGHT - 70),
     k.area({ scale: 0.8 }),
     k.body(),
-    k.scale(baseScale),
+    k.scale(-baseScale, baseScale), // Negative X to face left (toward duck)
     k.anchor("center"),
     k.move(k.LEFT, speed * ENEMIES.FROG.SPEED_MULTIPLIER),
     k.offscreen({ destroy: true, distance: 100 }),
@@ -340,22 +340,22 @@ export function spawnFrog(
     if (!isGameRunning() || isPaused()) return;
     jumpTimer += k.dt();
 
-    // Squish animation when about to jump
+    // Squish animation when about to jump (negative X to maintain facing left)
     if (jumpTimer >= ENEMIES.FROG.JUMP_INTERVAL - 0.15 && frog.isGrounded()) {
-      frog.scale = k.vec2(baseScale * 1.3, baseScale * 0.7); // Squash down
+      frog.scale = k.vec2(-baseScale * 1.3, baseScale * 0.7); // Squash down
     }
 
     if (jumpTimer >= ENEMIES.FROG.JUMP_INTERVAL) {
       jumpTimer = 0;
       if (frog.isGrounded()) {
         frog.jump(ENEMIES.FROG.JUMP_FORCE);
-        frog.scale = k.vec2(baseScale * 0.7, baseScale * 1.3); // Stretch up
+        frog.scale = k.vec2(-baseScale * 0.7, baseScale * 1.3); // Stretch up
       }
     }
 
     // Return to normal scale when grounded
     if (frog.isGrounded() && jumpTimer < ENEMIES.FROG.JUMP_INTERVAL - 0.15) {
-      frog.scale = k.lerp(frog.scale, k.vec2(baseScale, baseScale), k.dt() * 10);
+      frog.scale = k.lerp(frog.scale, k.vec2(-baseScale, baseScale), k.dt() * 10);
     }
   });
 }
