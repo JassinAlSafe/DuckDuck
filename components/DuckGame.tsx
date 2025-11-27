@@ -399,8 +399,6 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
         isPaused = !isPaused;
         player.paused = isPaused;
         pauseLabel.opacity = isPaused ? 1 : 0;
-        // Pause all objects with "move" component indirectly by checking isPaused in updates if needed, 
-        // but Kaplay physics might continue. We can use timescale.
         k.timeScale = isPaused ? 0 : 1;
       };
 
@@ -417,6 +415,13 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
           if (!isGameRunning || isPaused) return;
 
           time += k.dt();
+          
+          // Player Position Clamping
+          // If not dashing, force player X to standard position to prevent 
+          // drift when standing on moving platforms
+          if (!isDashing && player.pos.x !== 80) {
+              player.pos.x = k.lerp(player.pos.x, 80, k.dt() * 10);
+          }
           
           // Dash Cooldown
           if (!canDash) {
@@ -513,15 +518,122 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
           k.tween(k.vec2(5, 3), k.vec2(4, 4), 0.15, (val) => player.scale = val, k.easings.easeOutElastic);
       });
 
-      // --- Spawner ---
+      player.onCollide("platform", () => {
+          if (player.isGrounded()) {
+             spawnDust(player.pos.add(0, 32));
+             // Squash
+             k.tween(k.vec2(5, 3), k.vec2(4, 4), 0.15, (val) => player.scale = val, k.easings.easeOutElastic);
+          }
+      });
+
+      // --- Spawners ---
+
+      const spawnBat = () => {
+        const bat = k.add([
+            k.rect(12, 10),
+            k.color(147, 112, 219), // Purple
+            k.area(),
+            k.scale(3),
+            k.pos(GAME_WIDTH, GAME_HEIGHT - k.rand(100, 220)),
+            k.anchor("center"),
+            k.move(k.LEFT, speed * 1.3),
+            k.offscreen({ destroy: true, distance: 100 }),
+            k.z(20),
+            "bat",
+            "danger"
+        ]);
+        
+        // Wings
+        const leftWing = bat.add([k.rect(6, 4), k.pos(-8, -4), k.color(75, 0, 130)]);
+        const rightWing = bat.add([k.rect(6, 4), k.pos(2, -4), k.color(75, 0, 130)]);
+        
+        // Sine wave movement
+        let t = 0;
+        bat.onUpdate(() => {
+            if (isPaused) return;
+            t += k.dt() * 10;
+            bat.pos.y += Math.sin(t) * 2;
+            // Flap animation
+            const flap = Math.sin(t * 2) * 2;
+            leftWing.pos.y = -4 + flap;
+            rightWing.pos.y = -4 + flap;
+        });
+      };
+
+      const spawnSlime = () => {
+          const slime = k.add([
+             k.rect(14, 10),
+             k.color(50, 205, 50), // Lime Green
+             k.area(),
+             k.body(),
+             k.scale(3.5),
+             k.pos(GAME_WIDTH, GAME_HEIGHT - 60), // Start above ground
+             k.anchor("center"),
+             k.move(k.LEFT, speed),
+             k.offscreen({ destroy: true, distance: 100 }),
+             k.z(20),
+             "slime",
+             "danger"
+          ]);
+          
+          // Eyes
+          slime.add([k.rect(2, 2), k.pos(-3, -2), k.color(0,0,0)]);
+          slime.add([k.rect(2, 2), k.pos(3, -2), k.color(0,0,0)]);
+
+          // Jumping logic
+          k.loop(1.5, () => {
+             if (isGameRunning && !isPaused && slime.isGrounded()) {
+                 slime.jump(500);
+             }
+          });
+      };
+
+      const spawnPlatform = () => {
+          const yPos = GAME_HEIGHT - k.rand(100, 180);
+          const platform = k.add([
+              k.rect(64, 16),
+              k.color(139, 69, 19), // SaddleBrown
+              k.area(),
+              k.body({ isStatic: true }),
+              k.scale(2),
+              k.pos(GAME_WIDTH, yPos),
+              k.anchor("center"),
+              k.move(k.LEFT, speed),
+              k.offscreen({ destroy: true, distance: 100 }),
+              k.z(10),
+              "platform"
+          ]);
+          
+          // Visual details (Rivets)
+          platform.add([k.rect(2, 2), k.pos(-28, -6), k.color(160, 82, 45)]);
+          platform.add([k.rect(2, 2), k.pos(26, -6), k.color(160, 82, 45)]);
+          
+          // Maybe spawn bread on top
+          if (k.rand() > 0.3) {
+              k.add([
+                  k.rect(10, 10),
+                  k.color(255, 165, 0),
+                  k.outline(2, k.rgb(139, 69, 19)),
+                  k.area(), 
+                  k.scale(3),
+                  k.pos(GAME_WIDTH, yPos - 40),
+                  k.anchor("center"),
+                  k.move(k.LEFT, speed),
+                  k.offscreen({ destroy: true, distance: 100 }),
+                  k.z(10), 
+                  "bread",
+              ]);
+          }
+      };
+
       const spawnEverything = () => {
         if (!isGameRunning || isPaused) { k.wait(1, spawnEverything); return; }
 
-        // Increase variety based on score/time
+        // Increase variety based on randomness
         const type = k.randi(0, 100); 
         
-        // 0-35: Ground Obstacle
-        if (type <= 35) {
+        if (type <= 20) {
+            // Standard Ground Obstacle
             k.add([
               k.rect(12, 12),
               k.color(105, 105, 105),
@@ -533,11 +645,14 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
               k.offscreen({ destroy: true, distance: 100 }),
               k.z(10), 
               "obstacle",
+              "danger"
             ]);
         }
-        
-        // 36-50: Flying Drone
+        else if (type <= 35) {
+            spawnSlime(); // Bouncing ground enemy
+        }
         else if (type <= 50) {
+             // Standard Drone
              const drone = k.add([
                 k.rect(12, 8),
                 k.color(220, 20, 60),
@@ -548,19 +663,19 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
                 k.move(k.LEFT, speed * 1.2),
                 k.offscreen({ destroy: true, distance: 100 }),
                 k.z(20),
-                "enemy"
+                "enemy",
+                "danger"
              ]);
-             
-             drone.add([
-                 k.rect(8, 2),
-                 k.pos(0, -6),
-                 k.color(200, 200, 200),
-                 k.anchor("center")
-             ]);
+             drone.add([k.rect(8, 2), k.pos(0, -6), k.color(200, 200, 200), k.anchor("center")]);
         }
-        
-        // 51-55: Shield Powerup (Rare)
-        else if (type <= 55) {
+        else if (type <= 65) {
+            spawnBat(); // Sine wave flyer
+        }
+        else if (type <= 80) {
+            spawnPlatform(); // Moving platform
+        }
+        else if (type <= 85) {
+             // Shield Powerup (Rare)
              const shieldItem = k.add([
                 k.rect(8, 8),
                 k.color(0, 191, 255),
@@ -573,17 +688,10 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
                 k.z(15),
                 "shield-item"
              ]);
-             // Glow effect
-             shieldItem.add([
-                 k.rect(12, 12),
-                 k.color(0, 191, 255),
-                 k.opacity(0.3),
-                 k.anchor("center")
-             ]);
+             shieldItem.add([k.rect(12, 12), k.color(0, 191, 255), k.opacity(0.3), k.anchor("center")]);
         }
-        
-        // 56+: Bread (Common)
         else {
+            // Just Bread
             const isAir = k.rand() > 0.5;
             const breadY = isAir ? GAME_HEIGHT - 220 : GAME_HEIGHT - 130;
             k.add([
@@ -636,8 +744,8 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
           }
       };
 
-      player.onCollide("obstacle", handleDanger);
-      player.onCollide("enemy", handleDanger);
+      // Use generic danger tag for all hazards
+      player.onCollide("danger", handleDanger);
 
       player.onCollide("bread", (b) => {
         playCollectSound();
