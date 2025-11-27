@@ -1,18 +1,24 @@
-
 let audioCtx: AudioContext | null = null;
 
-const getCtx = () => {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    return audioCtx;
+const getCtx = (): AudioContext => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+  }
+  return audioCtx;
 };
 
-export const resumeAudioContext = () => {
-    const ctx = getCtx();
-    if (ctx.state === 'suspended') {
-        ctx.resume().catch(e => console.error("Audio resume failed", e));
-    }
+export const resumeAudioContext = (): void => {
+  const ctx = getCtx();
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(e => console.error("Audio resume failed", e));
+  }
+};
+
+export const cleanupAudioContext = (): void => {
+  if (audioCtx) {
+    audioCtx.close().catch(e => console.error("Audio context close failed", e));
+    audioCtx = null;
+  }
 };
 
 export const playJumpSound = () => {
