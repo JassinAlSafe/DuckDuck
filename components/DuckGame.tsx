@@ -3,6 +3,15 @@ import React, { useEffect, useRef } from 'react';
 import kaplay, { KAPLAYCtx } from 'kaplay';
 import { GAME_HEIGHT, GAME_WIDTH } from '../constants';
 import { getDuckCommentary } from '../services/geminiService';
+import { 
+  playJumpSound, 
+  playCollectSound, 
+  playDashSound, 
+  playShieldSound, 
+  playCrashSound, 
+  playSmashSound,
+  resumeAudioContext 
+} from '../services/audioService';
 
 interface DuckGameProps {
   onScoreUpdate: (score: number) => void;
@@ -12,6 +21,16 @@ interface DuckGameProps {
 const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const kRef = useRef<KAPLAYCtx | null>(null);
+
+  // Refs for callbacks to avoid re-triggering useEffect when parent state changes
+  const onScoreUpdateRef = useRef(onScoreUpdate);
+  const onGameOverRef = useRef(onGameOver);
+
+  // Update refs whenever props change
+  useEffect(() => {
+    onScoreUpdateRef.current = onScoreUpdate;
+    onGameOverRef.current = onGameOver;
+  }, [onScoreUpdate, onGameOver]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -43,12 +62,17 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
     // Physics
     k.setGravity(2400);
 
+    // Ensure audio context is unlocked
+    resumeAudioContext();
+    k.canvas.addEventListener('click', resumeAudioContext);
+
     // --- Scene: Game ---
     k.scene("game", () => {
       let score = 0;
       let speed = 400;
       let canDoubleJump = false;
       let isGameRunning = false; 
+      let isPaused = false;
 
       // Dash State
       let isDashing = false;
@@ -67,6 +91,17 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
         k.color(0, 0, 0),
         k.fixed(),
         k.z(100),
+      ]);
+
+      const pauseLabel = k.add([
+        k.text("PAUSED", { size: 48 }),
+        k.pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+        k.anchor("center"),
+        k.color(255, 255, 255),
+        k.outline(4, k.rgb(0,0,0)),
+        k.fixed(),
+        k.z(200),
+        k.opacity(0)
       ]);
 
       // Dash Bar UI
@@ -97,15 +132,19 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
       const startCountdown = async () => {
           const center = k.vec2(GAME_WIDTH / 2, GAME_HEIGHT / 2);
           const t3 = k.add([k.text("3", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,0,0), k.z(200)]);
+          playCollectSound(); 
           await k.wait(0.6);
           k.destroy(t3);
           const t2 = k.add([k.text("2", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,165,0), k.z(200)]);
+          playCollectSound();
           await k.wait(0.6);
           k.destroy(t2);
           const t1 = k.add([k.text("1", { size: 64 }), k.pos(center), k.anchor("center"), k.color(255,255,0), k.z(200)]);
+          playCollectSound();
           await k.wait(0.6);
           k.destroy(t1);
           const go = k.add([k.text("GO!", { size: 80 }), k.pos(center), k.anchor("center"), k.color(0,255,0), k.z(200)]);
+          playShieldSound(); // Higher pitch for GO
           await k.wait(0.4);
           k.destroy(go);
           isGameRunning = true;
@@ -131,7 +170,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
 
       // Clouds
       const spawnCloud = () => {
-        if (!isGameRunning) { k.wait(0.5, spawnCloud); return; }
+        if (!isGameRunning || isPaused) { k.wait(0.5, spawnCloud); return; }
         k.add([
             k.rect(k.rand(40, 80), k.rand(20, 30)),
             k.pos(GAME_WIDTH, k.rand(20, 200)),
@@ -184,7 +223,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
       
       // Infinite ground loop
       k.loop(64 / speed, () => {
-          if (isGameRunning) spawnGround(GAME_WIDTH);
+          if (isGameRunning && !isPaused) spawnGround(GAME_WIDTH);
       });
       
       // --- Player ---
@@ -224,24 +263,30 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
           k.anchor("center")
       ]);
 
-      // Shield Visual (Hidden by default)
-      const shieldVisual = player.add([
-          k.rect(20, 20),
+      // --- Shield Visuals (Attached to Player) ---
+      // Outer rotating energetic ring
+      const shieldRing = player.add([
+          k.rect(28, 28),
           k.pos(0, 0),
           k.color(0, 200, 255),
           k.opacity(0),
           k.anchor("center"),
-          k.z(-1) // Behind duck
+          k.outline(2, k.rgb(255, 255, 255)), // White outline for contrast
+          k.z(-1), // Behind player
       ]);
-      
-      // Shield Glow
-      shieldVisual.add([
-          k.rect(18, 18),
-          k.pos(0,0),
-          k.color(255, 255, 255),
-          k.opacity(0.3),
-          k.anchor("center")
-      ]);
+
+      // Orbiting particles
+      const shieldParticles: any[] = [];
+      for(let i = 0; i < 4; i++) {
+        shieldParticles.push(player.add([
+            k.rect(5, 5),
+            k.pos(0,0),
+            k.color(180, 255, 255),
+            k.opacity(0),
+            k.anchor("center"),
+            k.z(1) // In front
+        ]));
+      }
 
       // --- FX Helpers ---
       const spawnDust = (pos: any) => {
@@ -300,14 +345,17 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
 
       // --- Controls ---
       const jump = () => {
-        if (!isGameRunning) return;
+        if (!isGameRunning || isPaused) return;
+        resumeAudioContext();
         if (player.isGrounded()) {
+          playJumpSound();
           player.jump(900);
           canDoubleJump = true;
           // Squash & Stretch: Stretch Y, squish X
           k.tween(k.vec2(4, 4), k.vec2(3, 5), 0.1, (val) => player.scale = val, k.easings.easeOutQuad)
            .then(() => k.tween(player.scale, k.vec2(4, 4), 0.2, (val) => player.scale = val, k.easings.easeOutBounce));
         } else if (canDoubleJump) {
+            playJumpSound();
             player.jump(700);
             canDoubleJump = false;
             k.tween(0, 360, 0.3, (val) => player.angle = val, k.easings.easeOutQuad);
@@ -315,12 +363,29 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
       };
 
       const dash = () => {
-          if (!isGameRunning) return;
+          if (!isGameRunning || isPaused) return;
+          resumeAudioContext();
           if (canDash && !isDashing) {
+              playDashSound();
               isDashing = true;
               canDash = false;
               dashTimer = 0;
               k.shake(5);
+
+              // Sonic Boom Ring
+              const boom = k.add([
+                k.circle(10),
+                k.pos(player.pos),
+                k.anchor("center"),
+                k.color(200, 255, 255),
+                k.opacity(0.8),
+                k.scale(1),
+                k.z(18),
+                k.outline(3, k.rgb(255,255,255))
+              ]);
+              k.tween(1, 6, 0.3, (val) => boom.scale = k.vec2(val), k.easings.easeOutExpo);
+              k.tween(0.8, 0, 0.3, (val) => boom.opacity = val, k.easings.linear).then(() => k.destroy(boom));
+
               const dashTween = k.tween(player.pos.x, player.pos.x + 50, 0.1, (val) => player.pos.x = val, k.easings.easeOutQuad);
               k.wait(DASH_DURATION, () => {
                   isDashing = false;
@@ -329,16 +394,27 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
           }
       };
 
+      const togglePause = () => {
+        if (!isGameRunning) return;
+        isPaused = !isPaused;
+        player.paused = isPaused;
+        pauseLabel.opacity = isPaused ? 1 : 0;
+        // Pause all objects with "move" component indirectly by checking isPaused in updates if needed, 
+        // but Kaplay physics might continue. We can use timescale.
+        k.timeScale = isPaused ? 0 : 1;
+      };
+
       k.onKeyPress("space", jump);
       k.onKeyPress("up", jump);
       k.onMousePress(jump);
       k.onKeyPress("right", dash);
       k.onKeyPress("d", dash);
+      k.onKeyPress("p", togglePause);
 
       // --- Main Loop ---
       let time = 0;
       k.onUpdate(() => {
-          if (!isGameRunning) return;
+          if (!isGameRunning || isPaused) return;
 
           time += k.dt();
           
@@ -357,30 +433,53 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
 
           // Dash Visuals
           if (isDashing) {
-              // Ghost trail
-              if (time % 0.05 < 0.02) {
-                  k.add([
+              // Ghost trail - frequent spawns for motion blur
+              if (time % 0.03 < 0.05) { 
+                  const ghost = k.add([
                       k.rect(16, 16),
                       k.pos(player.pos),
-                      k.scale(4),
+                      k.scale(player.scale), // Match current scale (squash/stretch)
                       k.anchor("center"),
-                      k.color(255, 255, 255),
+                      k.color(0, 255, 255),
                       k.opacity(0.4),
-                      k.lifespan(0.2, { fade: 0.1 }),
+                      k.lifespan(0.15, { fade: 0.15 }),
                       k.z(19)
                   ]);
+                  // Speed line
+                  k.add([
+                    k.rect(k.rand(10,30), 2),
+                    k.pos(player.pos.x - k.rand(10,30), player.pos.y + k.rand(-10,10)),
+                    k.color(255,255,255),
+                    k.move(k.LEFT, 800),
+                    k.lifespan(0.1, {fade: 0.1}),
+                    k.z(18)
+                  ]);
               }
-              player.color = k.rgb(255, 255, 255);
+              player.color = k.rgb(200, 255, 255);
           } else {
               player.color = k.rgb(255, 215, 0);
           }
           
           // Shield Visuals
           if (hasShield) {
-              shieldVisual.opacity = 0.5 + Math.sin(time * 10) * 0.2; // Pulse
-              shieldVisual.angle += k.dt() * 100;
+              // Ring animation
+              shieldRing.opacity = 0.6 + Math.sin(time * 15) * 0.2; // Rapid pulse
+              shieldRing.angle += k.dt() * 120; // Rotate
+              
+              // Particles animation
+              shieldParticles.forEach((p, idx) => {
+                  p.opacity = 1;
+                  const speed = 4;
+                  const radius = 22 + Math.sin(time * 10) * 2; // Pulsing radius
+                  const angle = time * speed + (idx * (Math.PI / 2));
+                  
+                  p.pos.x = Math.cos(angle) * radius;
+                  p.pos.y = Math.sin(angle) * radius;
+                  p.angle = angle * (180 / Math.PI); // Rotate particle to face direction
+              });
           } else {
-              shieldVisual.opacity = 0;
+              shieldRing.opacity = 0;
+              shieldParticles.forEach(p => p.opacity = 0);
           }
 
           // Day/Night Cycle
@@ -415,7 +514,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
 
       // --- Spawner ---
       const spawnEverything = () => {
-        if (!isGameRunning) { k.wait(1, spawnEverything); return; }
+        if (!isGameRunning || isPaused) { k.wait(1, spawnEverything); return; }
 
         // Increase variety based on score/time
         const type = k.randi(0, 100); 
@@ -511,6 +610,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
       const handleDanger = async (obj: any) => {
           if (isDashing) {
               // Dash destroys everything
+              playSmashSound();
               k.destroy(obj);
               k.shake(5);
               spawnExplosion(obj.pos);
@@ -518,6 +618,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
               showFloatingText("SMASH!", player.pos);
           } else if (hasShield) {
               // Shield protects once
+              playSmashSound();
               k.destroy(obj);
               hasShield = false;
               k.shake(5);
@@ -525,10 +626,12 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
               showFloatingText("BLOCKED!", player.pos, k.rgb(0, 200, 255));
           } else {
               // Death
+              playCrashSound();
               isGameRunning = false;
               k.shake(20);
               const commentary = await getDuckCommentary(score);
-              onGameOver(score, commentary);
+              // Call the ref, not the prop
+              onGameOverRef.current(score, commentary);
           }
       };
 
@@ -536,16 +639,18 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
       player.onCollide("enemy", handleDanger);
 
       player.onCollide("bread", (b) => {
+        playCollectSound();
         k.destroy(b);
         score += 100;
         scoreLabel.text = `Score: ${score}`;
-        onScoreUpdate(score);
+        onScoreUpdateRef.current(score); // Call ref
         k.shake(2);
         spawnCrumbs(b.pos);
         showFloatingText("+100", b.pos);
       });
       
       player.onCollide("shield-item", (s) => {
+          playShieldSound();
           k.destroy(s);
           hasShield = true;
           score += 50;
@@ -555,16 +660,19 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
 
       // Score Loop
       k.loop(0.1, () => {
-          if (isGameRunning) {
+          if (isGameRunning && !isPaused) {
               score += 1;
               scoreLabel.text = `Score: ${score}`;
-              onScoreUpdate(score);
+              onScoreUpdateRef.current(score); // Call ref
           }
       });
       
       // Speed Loop
       k.loop(5, () => {
-          if (isGameRunning) speed += 15;
+          if (isGameRunning && !isPaused) {
+            speed += 15;
+            showFloatingText("SPEED UP!", player.pos.sub(0, 40), k.rgb(255, 50, 50));
+          }
       });
     });
 
@@ -581,7 +689,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
             containerRef.current.innerHTML = '';
         }
     };
-  }, [onGameOver, onScoreUpdate]);
+  }, []); // Empty dependencies ensures this only runs ONCE per mount
 
   return (
     <div className="relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl bg-slate-900 w-full max-w-2xl mx-auto">
