@@ -451,6 +451,7 @@ const DuckGame: React.FC<DuckGameProps> = ({ onScoreUpdate, onGameOver }) => {
                     k.pos(player.pos.x - k.rand(10,30), player.pos.y + k.rand(-10,10)),
                     k.color(255,255,255),
                     k.move(k.LEFT, 800),
+                    k.opacity(1),
                     k.lifespan(0.1, {fade: 0.1}),
                     k.z(18)
                   ]);
