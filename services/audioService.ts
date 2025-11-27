@@ -160,3 +160,24 @@ export const playSmashSound = () => {
     gain.connect(ctx.destination);
     noise.start();
 };
+
+export const playPauseSound = () => {
+    const ctx = getCtx();
+    resumeAudioContext();
+    const now = ctx.currentTime;
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(440, now); // A4
+    osc.frequency.setValueAtTime(220, now + 0.1); // A3 drop
+    
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.15);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(now + 0.15);
+};

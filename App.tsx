@@ -10,6 +10,7 @@ function App() {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [currentScore, setCurrentScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
+  const [health, setHealth] = useState(3);
   const [lastCommentary, setLastCommentary] = useState<string | null>(null);
   const [gameId, setGameId] = useState(0); // Used to force remount of game
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -46,6 +47,10 @@ function App() {
     }
   };
 
+  const handleHealthUpdate = (hp: number) => {
+      setHealth(hp);
+  }
+
   const handleGameOver = (score: number, commentary: string) => {
     setLastCommentary(commentary);
     setGameState(GameState.GAME_OVER);
@@ -75,6 +80,7 @@ function App() {
   const startGame = () => {
       setGameId(prev => prev + 1); // Force fresh instance
       setCurrentScore(0);
+      setHealth(3);
       setGameState(GameState.PLAYING);
   };
   
@@ -110,13 +116,14 @@ function App() {
 
         {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
             <>
-                <GameHUD currentScore={currentScore} highScore={highScore} />
+                <GameHUD currentScore={currentScore} highScore={highScore} health={health} />
 
                 <div className="relative group w-full max-w-2xl">
                     {gameState === GameState.PLAYING ? (
                         <DuckGame 
                           key={gameId}
                           onScoreUpdate={handleScoreUpdate}
+                          onHealthUpdate={handleHealthUpdate}
                           onGameOver={handleGameOver}
                         />
                     ) : (
